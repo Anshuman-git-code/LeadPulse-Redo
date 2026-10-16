@@ -1,0 +1,19 @@
+# Node dependencies
+node_modules/
+**/node_modules/
+
+# Local secrets (do not commit these files)
+.env
+**/.env
+
+# Expo-generated files
+.expo/
+**/.expo/
+mobile/dist/
+mobile/web-build/
+
+# OS/editor noise
+.DS_Store
+
+# Test/build output
+coverage/
