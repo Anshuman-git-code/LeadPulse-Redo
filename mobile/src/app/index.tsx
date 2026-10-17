@@ -7,7 +7,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { socket } from '../services/socket';
+import { API_BASE_URL, socket } from '../services/socket';
 
 type Lead = {
   id: string;
@@ -22,6 +22,20 @@ export default function LeadsScreen() {
   const [connectionStatus, setConnectionStatus] = useState('Connecting…');
 
   useEffect(() => {
+
+    async function loadHistory() {
+      try {
+        const response = await fetch(`${API_BASE_URL}/leads?limit=50`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const result = await response.json();
+        setLeads(Array.isArray(result.data) ? result.data : []);
+      } catch (error) {
+        console.warn('Could not load lead history:', error);
+      }
+    }
+
+    loadHistory();
+
     function onConnect() {
       setConnectionStatus('Connected to backend');
     }

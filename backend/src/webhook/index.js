@@ -5,6 +5,7 @@ const router = express.Router();
 const { retrieveLead } = require('../meta');
 const { normalizeLead } = require('../leads');
 const { publishLead } = require('../realtime');
+const { saveLead } = require('../leads/repository');
 
 // Meta calls this GET route while verifying the callback URL in its dashboard.
 router.get('/', (req, res) => {
@@ -102,7 +103,14 @@ async function processLeadEvents(payload) {
             try {
                 const rawLead = await retrieveLead(String(leadgenId));
                 const lead = normalizeLead(rawLead);
-                publishLead(lead);
+                const saved = await saveLead(lead);
+                publishLead({
+                    id: saved.leadgenId,
+                    name: saved.name,
+                    email: saved.email,
+                    phone: saved.phone,
+                    createdAt: saved.createdAt.toISOString(),
+                });
             } catch (error) {
                 // The 200 response has already been returned to Meta. Log any
                 // later processing failure for diagnosis in the backend terminal.
