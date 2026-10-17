@@ -1,4 +1,6 @@
 require('dotenv').config();
+const { prisma } = require('./db/prisma');
+const { listLeads, saveLead } = require('./leads/repository');
 
 const http = require('http');
 const express = require('express');
@@ -8,8 +10,14 @@ const { initializeRealtime, publishLead } = require('./realtime');
 
 const app = express();
 
-app.get('/health', (req, res) => {
-    res.json({ status: 'ok' });
+app.get('/health', async (req, res) => {
+    try {
+        await prisma.$queryRaw`SELECT 1`;
+        res.json({ status: 'ok', database: 'ok' });
+    } catch (error) {
+        console.error('Health check failed:', error.message);
+        res.status(503).json({ status: 'error', database: 'unavailable' });
+    }
 });
 
 // Preserve the original request bytes for HMAC validation.
@@ -18,6 +26,19 @@ app.use(
     express.raw({ type: 'application/json', limit: '1mb' }),
     webhookRouter
 );
+
+app.get('/leads', async (req, res) => {
+    try {
+        const leads = await listLeads({
+            limit: req.query.limit,
+            cursor: req.query.cursor,
+        });
+        res.json({ data: leads });
+    } catch (error) {
+        console.error('Failed to list leads:', error.message);
+        res.status(500).json({ error: 'Failed to retrieve leads' });
+    }
+});
 
 // Parse ordinary JSON bodies for non-webhook routes, including /test/lead.
 app.use(express.json({ limit: '1mb' }));
@@ -41,9 +62,8 @@ io.on('connection', (socket) => {
 
 // Local development route for testing the realtime UI without Meta.
 if (process.env.NODE_ENV !== 'production') {
-    app.post('/test/lead', (req, res) => {
+    app.post('/test/lead', async (req, res) => {
         const { name, email, phone } = req.body || {};
-
         const lead = {
             id: `test-${Date.now()}`,
             name: name || 'Unknown',
@@ -52,8 +72,20 @@ if (process.env.NODE_ENV !== 'production') {
             createdAt: new Date().toISOString(),
         };
 
-        publishLead(lead);
-        res.status(201).json({ success: true, lead });
+        try {
+            const saved = await saveLead(lead);
+            publishLead({
+                id: saved.leadgenId,
+                name: saved.name,
+                email: saved.email,
+                phone: saved.phone,
+                createdAt: saved.createdAt.toISOString(),
+            });
+            res.status(201).json({ success: true, lead: saved });
+        } catch (error) {
+            console.error('Failed to save test lead:', error.message);
+            res.status(500).json({ error: 'Failed to save lead' });
+        }
     });
 }
 
