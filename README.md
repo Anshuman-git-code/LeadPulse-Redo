@@ -8,6 +8,15 @@ Built and runs locally on a MacBook Air during development. ngrok bridges the pu
 
 ---
 
+## Demo
+
+
+https://github.com/user-attachments/assets/74fa2344-c61b-4583-841b-26e2dec81af9
+
+
+
+---
+
 ## How it works
 
 1. Someone submits a Facebook Lead Ad form
