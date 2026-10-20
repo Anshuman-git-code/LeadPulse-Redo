@@ -11,7 +11,7 @@ const app = express();
 app.get('/health', (req, res) => {
     const healthcheck = {
         status: 'ok',
-        uptime: process.uptime(),
+        uptime: Math.floor(process.uptime()),
         timestamp: Date.now()
     };
     try {
