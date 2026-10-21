@@ -60,8 +60,14 @@ export default function LeadsScreen() {
     return (
       <View style={styles.card}>
         <Text style={styles.leadName}>{item.name || 'Unknown'}</Text>
-        <Text style={styles.detail}>Email: {item.email || 'Not provided'}</Text>
-        <Text style={styles.detail}>Phone: {item.phone || 'Not provided'}</Text>
+        <View style={styles.detailRow}>
+          <Text style={styles.detailLabel}>Email</Text>
+          <Text style={styles.detailValue}>{item.email || 'Not provided'}</Text>
+        </View>
+        <View style={styles.detailRow}>
+          <Text style={styles.detailLabel}>Phone</Text>
+          <Text style={styles.detailValue}>{item.phone || 'Not provided'}</Text>
+        </View>
         <Text style={styles.timestamp}>
           {item.createdAt ? new Date(item.createdAt).toLocaleString() : ''}
         </Text>
@@ -82,10 +88,10 @@ export default function LeadsScreen() {
           ]}
         />
         <Text style={styles.statusText}>{connectionStatus}</Text>
-        {connectionStatus === 'Connecting…' ? <ActivityIndicator /> : null}
+        {connectionStatus === 'Connecting…' ? <ActivityIndicator color="#58a6ff" /> : null}
       </View>
 
-      <Text style={styles.sectionTitle}>Incoming leads ({leads.length})</Text>
+      <Text style={styles.sectionTitle}>INCOMING LEADS · {leads.length}</Text>
       <FlatList
         data={leads}
         keyExtractor={(item) => item.id}
@@ -104,76 +110,99 @@ export default function LeadsScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#f4f6f8',
-    paddingHorizontal: 18,
+    backgroundColor: '#0d1117',
+    paddingHorizontal: 20,
     paddingTop: 18,
   },
   title: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: '700',
-    color: '#17202a',
-    marginBottom: 12,
+    color: '#e6edf3',
+    marginBottom: 14,
+    letterSpacing: 0.4,
   },
   statusRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    backgroundColor: '#161b22',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     marginBottom: 24,
+    borderWidth: 1,
+    borderColor: '#30363d',
   },
   statusDot: {
-    width: 10,
-    height: 10,
+    width: 9,
+    height: 9,
     borderRadius: 5,
   },
   connectedDot: {
-    backgroundColor: '#16803c',
+    backgroundColor: '#3fb950',
   },
   disconnectedDot: {
-    backgroundColor: '#bd3333',
+    backgroundColor: '#f85149',
   },
   statusText: {
-    color: '#344054',
+    color: '#adbac7',
     flex: 1,
     fontSize: 13,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 11,
     fontWeight: '600',
-    color: '#17202a',
-    marginBottom: 10,
+    color: '#768390',
+    letterSpacing: 1.2,
+    marginBottom: 12,
   },
   card: {
-    backgroundColor: '#ffffff',
+    backgroundColor: '#161b22',
     borderRadius: 12,
-    padding: 15,
+    padding: 18,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#e0e5eb',
+    borderColor: '#30363d',
+    borderLeftWidth: 3,
+    borderLeftColor: '#1f6feb',
   },
   leadName: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '700',
-    color: '#17202a',
-    marginBottom: 6,
+    color: '#e6edf3',
+    marginBottom: 10,
   },
-  detail: {
-    color: '#344054',
-    fontSize: 14,
-    marginBottom: 3,
+  detailRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 5,
+  },
+  detailLabel: {
+    color: '#58a6ff',
+    fontSize: 13,
+    fontWeight: '600',
+    width: 44,
+  },
+  detailValue: {
+    color: '#adbac7',
+    fontSize: 13,
+    flex: 1,
   },
   timestamp: {
-    color: '#667085',
+    color: '#768390',
     fontSize: 11,
-    marginTop: 8,
+    marginTop: 10,
+    textAlign: 'right',
   },
   emptyList: {
     flexGrow: 1,
     justifyContent: 'center',
   },
   emptyText: {
-    color: '#667085',
+    color: '#768390',
     textAlign: 'center',
-    lineHeight: 21,
-    paddingHorizontal: 12,
+    lineHeight: 22,
+    paddingHorizontal: 24,
+    fontSize: 14,
   },
 });
