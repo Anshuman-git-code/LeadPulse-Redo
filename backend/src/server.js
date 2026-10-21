@@ -42,18 +42,35 @@ io.on('connection', (socket) => {
 // Local development route for testing the realtime UI without Meta.
 if (process.env.NODE_ENV !== 'production') {
     app.post('/test/lead', (req, res) => {
-        const { name, email, phone } = req.body || {};
+        const body = req.body;
 
+        if (!body || typeof body !== 'object' || Array.isArray(body)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Request body must be a JSON object',
+            });
+        }
+
+        for (const field of ['name', 'email', 'phone']) {
+            if (body[field] !== undefined && typeof body[field] !== 'string') {
+                return res.status(400).json({
+                    success: false,
+                    error: `${field} must be a string`,
+                });
+            }
+        }
+
+        const { name, email, phone } = body;
         const lead = {
             id: `test-${Date.now()}`,
-            name: name || 'Unknown',
-            email: email || '',
-            phone: phone || '',
+            name: name?.trim() || 'Unknown',
+            email: email?.trim() || '',
+            phone: phone?.trim() || '',
             createdAt: new Date().toISOString(),
         };
 
         publishLead(lead);
-        res.status(201).json({ success: true, lead });
+        return res.status(201).json({ success: true, lead });
     });
 }
 
