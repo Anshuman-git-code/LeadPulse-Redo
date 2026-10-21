@@ -8,6 +8,20 @@ const { initializeRealtime, publishLead } = require('./realtime');
 
 const app = express();
 
+app.use((req, res, next) => {
+    const startedAt = process.hrtime.bigint();
+
+    res.on('finish', () => {
+        const elapsedMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
+
+        console.log(
+            `[http] ${req.method} ${req.path} ${res.statusCode} ${elapsedMs.toFixed(1)}ms`
+        );
+    });
+
+    next();
+});
+
 app.get('/health', (req, res) => {
     res.json({ status: 'ok' });
 });
