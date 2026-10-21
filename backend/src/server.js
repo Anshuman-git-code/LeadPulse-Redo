@@ -55,7 +55,9 @@ if (process.env.NODE_ENV !== 'production') {
             if (body[field] !== undefined && typeof body[field] !== 'string') {
                 return res.status(400).json({
                     success: false,
-                    error: `${field} must be a string`,
+                    error: {
+                        message: 'Request body must be a JSON object',
+                    },
                 });
             }
         }
@@ -70,7 +72,13 @@ if (process.env.NODE_ENV !== 'production') {
         };
 
         publishLead(lead);
-        return res.status(201).json({ success: true, lead });
+        res.status(201).json({
+            success: true,
+            data: { lead },
+            meta: {
+                createdAt: new Date().toISOString(),
+            },
+        });
     });
 }
 
