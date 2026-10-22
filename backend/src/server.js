@@ -9,7 +9,18 @@ const { initializeRealtime, publishLead } = require('./realtime');
 const app = express();
 
 app.get('/health', (req, res) => {
-    res.json({ status: 'ok' });
+    const healthcheck = {
+        status: 'ok',
+        uptime: Math.floor(process.uptime()),
+        timestamp: Date.now()
+    };
+    try {
+        res.status(200).json(healthcheck);
+    } catch (error) {
+        healthcheck.status = 'error';
+        healthcheck.message = error.message;
+        res.status(503).json(healthcheck);
+    }
 });
 
 // Preserve the original request bytes for HMAC validation.
