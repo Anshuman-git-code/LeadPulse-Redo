@@ -5,6 +5,7 @@ const router = express.Router();
 const { retrieveLead } = require('../meta');
 const { normalizeLead } = require('../leads');
 const { publishLead } = require('../realtime');
+const { saveLead } = require('../leads/repository');
 
 // Meta calls this GET route while verifying the callback URL in its dashboard.
 router.get('/', (req, res) => {
@@ -102,7 +103,26 @@ async function processLeadEvents(payload) {
             try {
                 const rawLead = await retrieveLead(String(leadgenId));
                 const lead = normalizeLead(rawLead);
-                publishLead(lead);
+
+                // Persist the lead before publishing. If saveLead() throws
+                // (e.g. DB unavailable), publishLead() is not reached — the
+                // mobile app will not receive a lead that was not stored.
+                // The 200 has already been returned to Meta; re-delivery is
+                // handled safely by the upsert on leadgen_id.
+                const saved = await saveLead(lead);
+
+                // Publish the saved record's fields, not the raw normalized
+                // object. This ensures the mobile app receives the same shape
+                // as GET /leads, with createdAt as a stable ISO string.
+                const publicLead = {
+                    id: saved.leadgen_id,
+                    name: saved.name,
+                    email: saved.email,
+                    phone: saved.phone,
+                    createdAt: saved.createdAt.toISOString(),
+                };
+
+                publishLead(publicLead);
             } catch (error) {
                 // The 200 response has already been returned to Meta. Log any
                 // later processing failure for diagnosis in the backend terminal.

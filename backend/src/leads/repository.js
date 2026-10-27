@@ -6,17 +6,20 @@ async function saveLead(lead) {
             leadgen_id: String(lead.id),
         },
         update: {
+            // createdAt is intentionally omitted: the original lead timestamp
+            // must not be overwritten if the same leadgen_id is delivered again.
             name: lead.name || 'Unknown',
             email: lead.email || "",
             phone: lead.phone || "",
-            createdAt: lead.created_time ? new Date(lead.createdAt) : undefined,
         },
         create: {
             leadgen_id: String(lead.id),
             name: lead.name || 'Unknown',
             email: lead.email || "",
             phone: lead.phone || "",
-            createdAt: lead.created_time ? new Date(lead.createdAt) : undefined,
+            // lead.createdAt is the ISO string set by normalizeLead() from the
+            // raw Meta created_time field. If absent, the DB default (now()) applies.
+            createdAt: lead.createdAt ? new Date(lead.createdAt) : undefined,
         },
     });
 }
