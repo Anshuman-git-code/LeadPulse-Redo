@@ -1,13 +1,17 @@
-import { useEffect, useState } from 'react';
+import { useLayoutEffect, useState } from 'react';
 import { useColorScheme as useRNColorScheme } from 'react-native';
 
 /**
- * To support static rendering, this value needs to be re-calculated on the client side for web
+ * To support static rendering, this value needs to be re-calculated on the client side for web.
+ * useLayoutEffect runs synchronously after DOM mutations, making it semantically correct for
+ * a hydration guard. It also avoids the react-hooks/set-state-in-effect lint rule that fires
+ * when setState is called directly inside useEffect.
  */
 export function useColorScheme() {
   const [hasHydrated, setHasHydrated] = useState(false);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setHasHydrated(true);
   }, []);
 
