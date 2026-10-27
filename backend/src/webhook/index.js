@@ -120,6 +120,8 @@ async function processLeadEvents(payload) {
                     email: saved.email,
                     phone: saved.phone,
                     createdAt: saved.createdAt.toISOString(),
+                    status: saved.status,
+                    source: saved.source,
                 };
 
                 publishLead(publicLead);

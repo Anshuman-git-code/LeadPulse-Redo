@@ -11,13 +11,32 @@ datasource db {
   provider = "postgresql"
 }
 
+// The five lifecycle stages a lead can be in.
+// Values must match mobile/src/features/leads/types.ts LeadStatus exactly.
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  CONVERTED
+  LOST
+}
+
+// Where the lead originated.
+// Values must match mobile/src/features/leads/types.ts LeadSource exactly.
+enum LeadSource {
+  META_LEAD_ADS
+  TEST
+}
+
 model Lead {
-  id String @id @default(cuid())
-  leadgen_id String @unique
-  name String @default("Unknown")
-  email String @default("")
-  phone String @default("")
-  createdAt DateTime @default(now())
+  id         String     @id @default(cuid())
+  leadgen_id String     @unique
+  name       String     @default("Unknown")
+  email      String     @default("")
+  phone      String     @default("")
+  createdAt  DateTime   @default(now())
+  status     LeadStatus @default(NEW)
+  source     LeadSource @default(META_LEAD_ADS)
 
   @@index([createdAt])
   @@map("lead")
