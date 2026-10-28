@@ -18,6 +18,7 @@ import { socket } from '@/services/socket';
 
 import type { Lead, LeadStatus } from './types';
 import { mockLeadRepository } from './services/mockLeadRepository';
+import { apiLeadRepository } from './services/apiLeadRepository';
 
 // ---------------------------------------------------------------------------
 // Context shape
@@ -26,6 +27,10 @@ import { mockLeadRepository } from './services/mockLeadRepository';
 export interface LeadsContextValue {
   /** All leads, newest first */
   leads: Lead[];
+  /** True while the initial fetch from GET /leads is in progress */
+  isLoading: boolean;
+  /** True if the initial fetch failed and mock data is being shown */
+  fetchError: boolean;
   /** Human-readable Socket.IO connection status for the status indicator */
   connectionStatus: string;
   /** Whether leads are from mock data or a live socket connection */
@@ -47,17 +52,44 @@ export const LeadsContext = createContext<LeadsContextValue | null>(null);
 // ---------------------------------------------------------------------------
 
 export function LeadsProvider({ children }: { children: React.ReactNode }): React.JSX.Element {
-  const [leads, setLeads] = useState<Lead[]>(() => mockLeadRepository.getAll());
+  // Start empty — leads will be populated by the initial fetch or mock fallback.
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState('Connecting…');
   const [dataMode, setDataMode] = useState<'mock' | 'socket'>('mock');
 
-  // Sync React state from repository after every mutation
-  function syncState() {
+  // Sync React state from mock repository after local mutations
+  function syncMockState() {
     setLeads(mockLeadRepository.getAll());
   }
 
-  // Socket.IO lifecycle — mirrors the original index.tsx pattern
+  // Initial leads fetch + Socket.IO lifecycle
   useEffect(() => {
+    let mounted = true;
+
+    // ── 1. Fetch saved leads from the backend on mount ──
+    async function fetchInitialLeads() {
+      try {
+        const apiLeads = await apiLeadRepository.fetchAll();
+        if (mounted) {
+          setLeads(apiLeads);
+          setFetchError(false);
+          setIsLoading(false);
+        }
+      } catch {
+        // Backend unreachable or returned an error — fall back to mock data
+        // so the app remains demoable offline.
+        if (mounted) {
+          setLeads(mockLeadRepository.getAll());
+          setFetchError(true);
+          setIsLoading(false);
+        }
+      }
+    }
+    fetchInitialLeads();
+
+    // ── 2. Socket.IO lifecycle (unchanged from original) ──
     function onConnect() {
       setConnectionStatus('Connected to backend');
       setDataMode('socket');
@@ -85,8 +117,8 @@ export function LeadsProvider({ children }: { children: React.ReactNode }): Reac
         notes: incoming.notes ?? [],
         activityLog: incoming.activityLog ?? [],
       };
-      mockLeadRepository.addLead(lead);
-      syncState();
+      // Prepend to the current leads array (whether from API or mock)
+      setLeads((prev) => [lead, ...prev.filter((l) => l.id !== lead.id)]);
     }
 
     socket.on('connect', onConnect);
@@ -96,6 +128,8 @@ export function LeadsProvider({ children }: { children: React.ReactNode }): Reac
     socket.connect();
 
     return () => {
+      // Prevent state updates after unmount (R-010 mounted-flag pattern)
+      mounted = false;
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
       socket.off('connect_error', onConnectError);
@@ -105,32 +139,80 @@ export function LeadsProvider({ children }: { children: React.ReactNode }): Reac
   }, []);
 
   // ---------------------------------------------------------------------------
-  // Mutation helpers — call repo, then sync state
+  // Mutation helpers
+  // updateLeadStatus: optimistic update + PATCH /leads/:id + rollback on failure
+  // addNote, setFollowUp: still local-only (mock repository)
+  // addLead: still local-only (socket handler uses setLeads directly)
   // ---------------------------------------------------------------------------
 
   function updateLeadStatus(id: string, status: LeadStatus) {
-    mockLeadRepository.updateStatus(id, status);
-    syncState();
+    // If the backend was unreachable at startup, use the mock repository
+    // so the app remains demoable offline.
+    if (fetchError) {
+      mockLeadRepository.updateStatus(id, status);
+      syncMockState();
+      return;
+    }
+
+    // 1. Save original status for potential rollback
+    const originalLead = leads.find((l) => l.id === id);
+    if (!originalLead) return;
+    const previousStatus = originalLead.status;
+
+    // 2. Optimistically update local state immediately — the UI shows
+    //    the new status chip without waiting for the network round-trip.
+    setLeads((prev) =>
+      prev.map((l) => (l.id === id ? { ...l, status } : l))
+    );
+
+    // 3. Fire PATCH /leads/:id in the background. The function returns
+    //    synchronously; the promise resolves/rejects later.
+    apiLeadRepository
+      .fetchUpdateStatus(id, status)
+      .then((updatedLead) => {
+        // Confirm with the API response — replaces the local lead with the
+        // server's version in case the server changed anything else.
+        setLeads((prev) =>
+          prev.map((l) => (l.id === id ? updatedLead : l))
+        );
+      })
+      .catch(() => {
+        // Roll back to the original status. The chip visibly reverts,
+        // which is the user's feedback that the change did not persist.
+        setLeads((prev) =>
+          prev.map((l) => (l.id === id ? { ...l, status: previousStatus } : l))
+        );
+      });
   }
 
   function addNote(leadId: string, text: string) {
     mockLeadRepository.addNote(leadId, text);
-    syncState();
+    syncMockState();
   }
 
   function setFollowUp(leadId: string, date: string) {
     mockLeadRepository.setFollowUp(leadId, date);
-    syncState();
+    syncMockState();
   }
 
   function addLead(lead: Lead) {
     mockLeadRepository.addLead(lead);
-    syncState();
+    syncMockState();
   }
 
   return (
     <LeadsContext.Provider
-      value={{ leads, connectionStatus, dataMode, updateLeadStatus, addNote, setFollowUp, addLead }}>
+      value={{
+        leads,
+        isLoading,
+        fetchError,
+        connectionStatus,
+        dataMode,
+        updateLeadStatus,
+        addNote,
+        setFollowUp,
+        addLead,
+      }}>
       {children}
     </LeadsContext.Provider>
   );
