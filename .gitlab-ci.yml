@@ -1,0 +1,200 @@
+# =============================================================================
+# LeadPulse — GitLab CI Pipeline
+# Branch:  ci/gitlab-pipeline
+# Phase:   DB/API quality checks + mobile quality checks
+#
+# Jobs
+# ────
+# backend_unit          (stage: test) — normalizer unit tests; no database
+# mobile_check          (stage: test) — TypeScript check + ESLint; no database
+# backend_migration_check (stage: integration) — PostgreSQL 16 service, Prisma
+#   client generation, and migration deployment; verifies the schema/migration
+#   chain is clean. Does NOT run repository, API, or webhook tests — those
+#   require dedicated integration tests not yet written (see note below).
+#
+# Missing integration tests (subsequent work — not covered by this pipeline)
+# ─────────────────────────────────────────────────────────────────────────────
+# The following 22 tests must be written before full integration coverage:
+#   Repository: saveLead() correctness and idempotency (T-R-01 to T-R-07)
+#   API routes:  GET /health, GET /leads, PATCH /leads/:id  (T-A-01 to T-A-09)
+#   Webhook:     signature, processLeadEvents, idempotency  (T-W-01 to T-W-06)
+# When those tests exist and pass, a separate backend_integration job will be
+# added to the integration stage to run them against the PostgreSQL service.
+#
+# Cache strategy
+# ──────────────
+# Each job caches .npm/ (the npm package tarball cache), keyed to the relevant
+# package-lock.json. This is the pattern documented in the GitLab CI caching
+# examples page (https://docs.gitlab.com/ci/caching/examples/).
+# Caching .npm/ is correct; caching node_modules/ is NOT recommended because
+# it contains platform-compiled native binaries that are runner-specific.
+# Command: npm ci --cache .npm --prefer-offline
+#
+# Required CI/CD variables (set in GitLab project/group settings, never here)
+# ─────────────────────────────────────────────────────────────────────────────
+#   CI_POSTGRES_USER      — database username for the CI service (e.g. leadpulse_ci)
+#   CI_POSTGRES_PASSWORD  — set as a masked variable; never committed to source
+#   CI_POSTGRES_DB        — database name for the CI service (e.g. leadpulse_test)
+#
+# Secrets that must NEVER appear in this file
+# ─────────────────────────────────────────────
+#   META_APP_SECRET, META_PAGE_ACCESS_TOKEN, production DATABASE_URL
+#
+# Runner requirement
+# ──────────────────
+# A GitLab runner with the Docker executor must be registered for this project.
+# GitLab.com shared runners satisfy this on the Free tier.
+# =============================================================================
+
+default:
+  # Node 24 is Active LTS (since October 2025) and matches local dev (v24.3.0).
+  # -slim: smaller image, faster pull, includes npm/npx; sufficient for Node.js CI.
+  image: node:24-slim
+
+  # Cancel a pending/running pipeline on a branch when a newer push arrives.
+  # Saves runner minutes and keeps the pipeline list clean.
+  interruptible: true
+
+stages:
+  - test
+  - integration
+
+# =============================================================================
+# Stage: test
+# Two jobs run in parallel. Both must pass for the stage to succeed.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# backend_unit — Normalizer unit tests (no database required)
+#
+# Runs the 5 existing tests in backend/test/normalize.test.js.
+# These tests import only src/leads/index.js (the pure normalizer function)
+# and do not require a database or any environment variables.
+# -----------------------------------------------------------------------------
+backend_unit:
+  stage: test
+  cache:
+    key:
+      files:
+        - backend/package-lock.json   # Cache invalidated when backend deps change
+    paths:
+      - backend/.npm/                 # npm package tarball cache (NOT node_modules/)
+  before_script:
+    - cd backend
+    - npm ci --cache .npm --prefer-offline
+  script:
+    - npm test
+  variables:
+    NODE_ENV: test
+
+# -----------------------------------------------------------------------------
+# mobile_check — TypeScript compilation check and ESLint
+#
+# npx tsc --noEmit:  type-checks the mobile TypeScript source without emitting
+#                    build output. Verifies there are no type errors.
+# npm run lint:      runs expo lint (ESLint via eslint-config-expo).
+#
+# EXPO_PUBLIC_SOCKET_URL: Expo CLI reads this variable from .env in local dev.
+#   In CI there is no .env file. The placeholder http://localhost:3000 is a
+#   non-functional URL that satisfies the env-loading step without pointing to
+#   any real service. It is not a secret and contains no sensitive value.
+# -----------------------------------------------------------------------------
+mobile_check:
+  stage: test
+  cache:
+    key:
+      files:
+        - mobile/package-lock.json    # Cache invalidated when mobile deps change
+    paths:
+      - mobile/.npm/
+  before_script:
+    - cd mobile
+    - npm ci --cache .npm --prefer-offline
+  script:
+    - npx tsc --noEmit
+    - npm run lint
+  variables:
+    EXPO_PUBLIC_SOCKET_URL: http://localhost:3000
+
+# =============================================================================
+# Stage: integration
+# Runs after stage: test. Requires a PostgreSQL 16 service container.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# backend_migration_check — Prisma client generation and migration deployment
+#
+# Purpose: verify that the Prisma schema is valid, the Prisma client generates
+# cleanly, and all existing migration files apply without error against a fresh
+# PostgreSQL 16 database.
+#
+# What this job proves:
+#   ✓ npm dependencies install cleanly from the lockfile
+#   ✓ Prisma schema at backend/prisma/schema.prisma is syntactically valid
+#   ✓ Prisma client generates correctly against the current schema
+#   ✓ Migration 20261024071920_lead applies cleanly
+#   ✓ Migration 20261027192236_add_status_source applies cleanly
+#   ✓ The database ends up in the correct state (schema matches migrations)
+#
+# What this job does NOT prove (requires additional integration tests):
+#   ✗ saveLead() correctness and idempotency (T-R-01 to T-R-07)
+#   ✗ listLeads() response shape and pagination (T-R-04 to T-R-05)
+#   ✗ updateLeadStatus() behavior (T-R-06 to T-R-07)
+#   ✗ GET /leads, PATCH /leads/:id, GET /health API tests (T-A-01 to T-A-09)
+#   ✗ Webhook signature, processLeadEvents, idempotency (T-W-01 to T-W-06)
+#
+# Commands:
+#   npx prisma generate      — generates the Prisma client from schema.prisma
+#   npx prisma migrate deploy — applies pending migrations non-interactively
+#                               (correct command for CI/CD; migrate dev is
+#                               interactive and must NOT be used in CI)
+#   npm test                  — runs the 5 normalizer unit tests as a sanity
+#                               check that the install is correct
+#
+# PostgreSQL service:
+#   The 'postgres' hostname is the service name — GitLab CI makes services
+#   reachable by their Docker image name (without tag) as the hostname.
+#   DATABASE_URL is constructed from CI/CD variables, never hardcoded here.
+#
+# CI/CD variables required in GitLab project settings (not in this file):
+#   CI_POSTGRES_USER      — e.g. leadpulse_ci
+#   CI_POSTGRES_PASSWORD  — masked variable; never committed
+#   CI_POSTGRES_DB        — e.g. leadpulse_test
+# -----------------------------------------------------------------------------
+backend_migration_check:
+  stage: integration
+  services:
+    - postgres:16
+  variables:
+    # PostgreSQL service container configuration.
+    # Plain string values here are safe — this is a temporary, ephemeral,
+    # isolated CI database. The actual values are injected at runtime by
+    # GitLab from the CI/CD variables configured in project settings.
+    POSTGRES_DB: $CI_POSTGRES_DB
+    POSTGRES_USER: $CI_POSTGRES_USER
+    POSTGRES_PASSWORD: $CI_POSTGRES_PASSWORD
+    # trust auth method: acceptable for an isolated ephemeral CI container.
+    POSTGRES_HOST_AUTH_METHOD: trust
+    # 'postgres' is the hostname GitLab CI assigns to the service container.
+    DATABASE_URL: postgresql://$CI_POSTGRES_USER:$CI_POSTGRES_PASSWORD@postgres:5432/$CI_POSTGRES_DB
+    NODE_ENV: test
+  cache:
+    key:
+      files:
+        - backend/package-lock.json
+    paths:
+      - backend/.npm/
+  before_script:
+    - cd backend
+    - npm ci --cache .npm --prefer-offline
+    # Generate the Prisma client from the current schema before migration.
+    # Required because the generated client is gitignored and not in the repo.
+    - npx prisma generate
+    # Apply all pending migrations non-interactively.
+    # prisma migrate deploy is the correct command for CI/CD environments.
+    # prisma migrate dev is interactive and designed for local development only.
+    - npx prisma migrate deploy
+  script:
+    # Run the existing unit tests as a final sanity check.
+    # These tests do not use the database; they verify the install is correct.
+    - npm test
